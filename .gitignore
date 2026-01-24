@@ -1,0 +1,12 @@
+.git/
+node_modules/
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+*.zip
+dist/
+build/
+.env
+.env.local
+*.log
