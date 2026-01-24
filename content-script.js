@@ -100,7 +100,7 @@
     
     grantBtn.addEventListener('click', () => {
       const minutes = parseInt(slider.value);
-      requestTemporaryAccess(minutes);
+      requestTemporaryAccess(minutes, container);
     });
     
     document.documentElement.appendChild(container);
@@ -175,21 +175,53 @@
     }, true);
   }
   
-  function requestTemporaryAccess(minutes) {
+  function requestTemporaryAccess(minutes, overlayContainer) {
     try {
       const domain = extractDomain(window.location.href);
       chrome.runtime.sendMessage(
         { action: 'startTimer', domain, durationMinutes: minutes },
         (response) => {
           if (chrome.runtime.lastError) return;
+          
           if (response && response.success) {
             hideBlockingOverlay();
+          } else if (response && response.error) {
+            // Show error message
+            showErrorMessage(response.error, overlayContainer);
           }
         }
       );
     } catch (error) {
       console.error('Error requesting temporary access:', error);
     }
+  }
+  
+  function showErrorMessage(errorMsg, overlayContainer) {
+    // Create error message overlay
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = `
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #ff6b6b;
+      color: white;
+      padding: 20px 30px;
+      border-radius: 8px;
+      z-index: 999997;
+      font-family: 'Roboto', sans-serif;
+      box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+      max-width: 300px;
+      text-align: center;
+    `;
+    errorDiv.textContent = errorMsg;
+    
+    document.documentElement.appendChild(errorDiv);
+    
+    // Remove error message after 3 seconds
+    setTimeout(() => {
+      errorDiv.remove();
+    }, 3000);
   }
   
   function extractDomain(url) {

@@ -2,8 +2,31 @@
 
 document.addEventListener('DOMContentLoaded', () => {
   loadBlockedSites();
+  loadSettings();
   setupEventListeners();
+  setupTabNavigation();
 });
+
+/**
+ * Set up tab navigation
+ */
+function setupTabNavigation() {
+  const tabButtons = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+  
+  tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Remove active class from all tabs
+      tabButtons.forEach(b => b.classList.remove('active'));
+      tabContents.forEach(c => c.classList.remove('active'));
+      
+      // Add active class to clicked tab
+      btn.classList.add('active');
+      const tabId = btn.getAttribute('data-tab');
+      document.getElementById(tabId).classList.add('active');
+    });
+  });
+}
 
 /**
  * Set up event listeners
@@ -15,7 +38,64 @@ function setupEventListeners() {
       addNewSite();
     }
   });
+  
+  document.getElementById('saveHoursBtn').addEventListener('click', saveWorkingHours);
 }
+
+/**
+ * Load settings from storage
+ */
+function loadSettings() {
+  // Load working hours
+  chrome.runtime.sendMessage(
+    { action: 'getWorkingHours' },
+    (response) => {
+      if (response.workingHours) {
+        document.getElementById('startHour').value = String(response.workingHours.startHour).padStart(2, '0');
+        document.getElementById('startMinute').value = String(response.workingHours.startMinute).padStart(2, '0');
+        document.getElementById('endHour').value = String(response.workingHours.endHour).padStart(2, '0');
+        document.getElementById('endMinute').value = String(response.workingHours.endMinute).padStart(2, '0');
+      }
+    }
+  );
+  
+  // Load daily limit
+  chrome.runtime.sendMessage(
+    { action: 'getDailyLimit' },
+    (response) => {
+      if (response) {
+        document.getElementById('dailyUsed').textContent = `${response.dailyLimitUsed} min`;
+        document.getElementById('dailyRemaining').textContent = `${response.dailyLimitRemaining} min`;
+      }
+    }
+  );
+}
+
+/**
+ * Save working hours
+ */
+function saveWorkingHours() {
+  const workingHours = {
+    startHour: parseInt(document.getElementById('startHour').value),
+    startMinute: parseInt(document.getElementById('startMinute').value),
+    endHour: parseInt(document.getElementById('endHour').value),
+    endMinute: parseInt(document.getElementById('endMinute').value)
+  };
+  
+  chrome.runtime.sendMessage(
+    { action: 'setWorkingHours', workingHours },
+    (response) => {
+      if (response.success) {
+        alert('Working hours saved successfully!');
+      } else {
+        alert('Failed to save working hours');
+      }
+    }
+  );
+}
+
+
+
 
 /**
  * Load and display blocked sites
