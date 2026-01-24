@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Site Blocker - Manage Blocked Sites</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <h1>🚫 Site Blocker</h1>
+      <p class="subtitle">Stay focused, stay productive</p>
+    </div>
+    
+    <div class="section">
+      <h2>Add Website to Block</h2>
+      <div class="input-group">
+        <input 
+          type="text" 
+          id="newSiteInput" 
+          placeholder="e.g., facebook.com, twitter.com"
+          class="input-field"
+        >
+        <button id="addSiteBtn" class="btn btn-primary">Add</button>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>Blocked Websites</h2>
+      <div id="blockedSitesList" class="sites-list">
+        <p class="loading">Loading...</p>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p>Version 1.0.0</p>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
