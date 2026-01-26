@@ -414,3 +414,145 @@ body {
   color: var(--text-secondary);
   font-weight: 500;
 }
+
+/* Stats Tab Styles */
+.period-selector {
+  display: flex;
+  gap: 8px;
+  background: var(--bg-tertiary);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.period-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+}
+
+.period-btn:hover {
+  background: var(--bg-accent);
+}
+
+.period-btn.active {
+  background: var(--accent-primary);
+  color: white;
+}
+
+.stats-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stats-card {
+  background: var(--bg-accent);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stats-card-main {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.stats-card-main .stats-value,
+.stats-card-main .stats-label {
+  color: white;
+}
+
+.stats-card-row {
+  display: flex;
+  gap: 8px;
+}
+
+.stats-card-small {
+  flex: 1;
+  padding: 14px 10px;
+}
+
+.stats-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.stats-value-small {
+  font-size: 20px;
+}
+
+.stats-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stats-work {
+  color: #10b981;
+}
+
+.stats-off {
+  color: #f59e0b;
+}
+
+.top-sites-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.top-site-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.top-site-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.top-site-domain {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.top-site-time {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.top-site-bar {
+  height: 8px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.top-site-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.top-site-visits {
+  font-size: 11px;
+  color: var(--text-muted);
+}

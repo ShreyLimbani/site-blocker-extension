@@ -2,10 +2,11 @@
 
 (function() {
   let mutationObserver = null;
-  
+
   checkAndBlockIfNeeded();
   setInterval(checkAndBlockIfNeeded, 1000);
   setupTamperingDetection();
+  setupVisibilityTracking();
 
   // Listen for theme changes from popup
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -279,6 +280,35 @@
     }, 3000);
   }
   
+  function setupVisibilityTracking() {
+    const domain = extractDomain(window.location.href);
+
+    // Send initial visibility state
+    sendVisibilityChange(!document.hidden, domain);
+
+    // Listen for visibility changes
+    document.addEventListener('visibilitychange', () => {
+      sendVisibilityChange(!document.hidden, domain);
+    });
+  }
+
+  function sendVisibilityChange(isVisible, domain) {
+    try {
+      if (!chrome.runtime || !chrome.runtime.sendMessage) return;
+
+      chrome.runtime.sendMessage({
+        action: 'tabVisibilityChanged',
+        isVisible,
+        domain
+      }, () => {
+        // Ignore errors from disconnected context
+        if (chrome.runtime.lastError) return;
+      });
+    } catch (error) {
+      // Silently ignore extension context invalidated errors
+    }
+  }
+
   function extractDomain(url) {
     try {
       const urlObj = new URL(url);

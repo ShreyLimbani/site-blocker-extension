@@ -4,8 +4,31 @@ const ACTIVE_TIMERS_KEY = 'activeTimers';
 const DAILY_LIMIT_KEY = 'dailyLimitUsed';
 const DAILY_LIMIT_DATE_KEY = 'dailyLimitDate';
 const WORKING_HOURS_KEY = 'workingHours';
+const SITE_STATS_KEY = 'siteStats';
 const DEFAULT_TIMER_DURATION = 5; // 5 minutes in minutes
 const DAILY_LIMIT_MINUTES = 60; // 60 minutes per day
+
+// In-memory session tracking
+let activeSessions = {}; // { domain: { tabId, startTime, isWorkingHours } }
+
+/**
+ * Check if current time is within working hours
+ */
+function isWithinWorkingHours(workingHours) {
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const startHour = workingHours.startHour || 9;
+  const startMinute = workingHours.startMinute || 0;
+  const endHour = workingHours.endHour || 17;
+  const endMinute = workingHours.endMinute || 0;
+
+  const currentTime = currentHour * 60 + currentMinute;
+  const startTime = startHour * 60 + startMinute;
+  const endTime = endHour * 60 + endMinute;
+
+  return currentTime >= startTime && currentTime <= endTime;
+}
 
 // Initialize storage on install
 chrome.runtime.onInstalled.addListener(() => {
@@ -73,7 +96,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     handleGetDailyLimit(sendResponse);
     return true;
   }
-  
+
+  if (request.action === 'getStats') {
+    handleGetStats(request.period, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'clearStats') {
+    handleClearStats(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'tabVisibilityChanged') {
+    handleTabVisibilityChanged(request.isVisible, request.domain, sender.tab?.id, sendResponse);
+    return true;
+  }
 
 });
 
@@ -327,11 +364,255 @@ function handleGetDailyLimit(sendResponse) {
  */
 function getDailyLimitUsed(dailyLimitUsed, lastDate) {
   const today = new Date().toDateString();
-  
+
   // If date changed, reset the counter
   if (lastDate !== today) {
     return 0;
   }
-  
+
   return dailyLimitUsed || 0;
 }
+
+// ============================================
+// TAB TRACKING AND STATS
+// ============================================
+
+/**
+ * Start tracking a session for a domain
+ */
+function startTrackingSession(domain, tabId) {
+  // Skip internal browser pages
+  if (!domain || domain.includes('chrome://') || domain.includes('chrome-extension://')) {
+    return;
+  }
+
+  // End any existing session for this domain
+  if (activeSessions[domain]) {
+    endTrackingSession(domain);
+  }
+
+  chrome.storage.local.get([WORKING_HOURS_KEY], (result) => {
+    const workingHours = result[WORKING_HOURS_KEY] || {};
+    const currentlyWorkingHours = isWithinWorkingHours(workingHours);
+
+    activeSessions[domain] = {
+      tabId,
+      startTime: Date.now(),
+      isWorkingHours: currentlyWorkingHours
+    };
+  });
+}
+
+/**
+ * End tracking session and save to stats
+ */
+function endTrackingSession(domain) {
+  const session = activeSessions[domain];
+  if (!session) return;
+
+  const durationMs = Date.now() - session.startTime;
+  delete activeSessions[domain];
+
+  // Only save if duration is meaningful (> 1 second)
+  if (durationMs > 1000) {
+    saveToStats(domain, durationMs, session.isWorkingHours);
+  }
+}
+
+/**
+ * Save time spent to stats storage
+ */
+function saveToStats(domain, durationMs, wasWorkingHours) {
+  chrome.storage.local.get([SITE_STATS_KEY], (result) => {
+    const stats = result[SITE_STATS_KEY] || {};
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+
+    if (!stats[domain]) {
+      stats[domain] = {
+        totalTimeMs: 0,
+        totalVisits: 0,
+        dailyData: {}
+      };
+    }
+
+    // Update totals
+    stats[domain].totalTimeMs += durationMs;
+    stats[domain].totalVisits += 1;
+
+    // Update daily data
+    if (!stats[domain].dailyData[today]) {
+      stats[domain].dailyData[today] = {
+        timeMs: 0,
+        visits: 0,
+        workTimeMs: 0
+      };
+    }
+
+    stats[domain].dailyData[today].timeMs += durationMs;
+    stats[domain].dailyData[today].visits += 1;
+    if (wasWorkingHours) {
+      stats[domain].dailyData[today].workTimeMs += durationMs;
+    }
+
+    // Clean up old data (keep only 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const cutoffDate = sevenDaysAgo.toISOString().split('T')[0];
+
+    Object.keys(stats[domain].dailyData).forEach(date => {
+      if (date < cutoffDate) {
+        delete stats[domain].dailyData[date];
+      }
+    });
+
+    chrome.storage.local.set({ [SITE_STATS_KEY]: stats });
+  });
+}
+
+/**
+ * Handle getting stats for popup
+ */
+function handleGetStats(period, sendResponse) {
+  chrome.storage.local.get([SITE_STATS_KEY], (result) => {
+    const stats = result[SITE_STATS_KEY] || {};
+    const today = new Date().toISOString().split('T')[0];
+
+    let dateRange = [today];
+    if (period === 'week') {
+      dateRange = [];
+      for (let i = 0; i < 7; i++) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        dateRange.push(date.toISOString().split('T')[0]);
+      }
+    }
+
+    const aggregated = {
+      totalTimeMs: 0,
+      totalVisits: 0,
+      workTimeMs: 0,
+      offTimeMs: 0,
+      sites: []
+    };
+
+    Object.entries(stats).forEach(([domain, siteData]) => {
+      let siteTimeMs = 0;
+      let siteVisits = 0;
+      let siteWorkTimeMs = 0;
+
+      dateRange.forEach(date => {
+        const dayData = siteData.dailyData[date];
+        if (dayData) {
+          siteTimeMs += dayData.timeMs;
+          siteVisits += dayData.visits;
+          siteWorkTimeMs += dayData.workTimeMs;
+        }
+      });
+
+      if (siteTimeMs > 0) {
+        aggregated.totalTimeMs += siteTimeMs;
+        aggregated.totalVisits += siteVisits;
+        aggregated.workTimeMs += siteWorkTimeMs;
+        aggregated.offTimeMs += (siteTimeMs - siteWorkTimeMs);
+
+        aggregated.sites.push({
+          domain,
+          timeMs: siteTimeMs,
+          visits: siteVisits,
+          workTimeMs: siteWorkTimeMs
+        });
+      }
+    });
+
+    // Sort sites by time spent (descending)
+    aggregated.sites.sort((a, b) => b.timeMs - a.timeMs);
+
+    sendResponse({ stats: aggregated });
+  });
+}
+
+/**
+ * Clear all stats
+ */
+function handleClearStats(sendResponse) {
+  chrome.storage.local.set({ [SITE_STATS_KEY]: {} }, () => {
+    sendResponse({ success: true });
+  });
+}
+
+/**
+ * Handle visibility change from content script
+ */
+function handleTabVisibilityChanged(isVisible, domain, tabId, sendResponse) {
+  if (isVisible && domain) {
+    startTrackingSession(domain, tabId);
+  } else if (!isVisible && domain) {
+    endTrackingSession(domain);
+  }
+  sendResponse({ success: true });
+}
+
+// Tab activated - start tracking new tab, end tracking old tab
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  // End all current sessions
+  Object.keys(activeSessions).forEach(domain => {
+    endTrackingSession(domain);
+  });
+
+  // Start tracking new tab
+  chrome.tabs.get(activeInfo.tabId, (tab) => {
+    if (chrome.runtime.lastError || !tab || !tab.url) return;
+    const domain = extractDomain(tab.url);
+    if (domain) {
+      startTrackingSession(domain, activeInfo.tabId);
+    }
+  });
+});
+
+// Tab URL changed - may need to switch tracking
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && tab.active && tab.url) {
+    const newDomain = extractDomain(tab.url);
+
+    // Find if this tab had a previous session and end it
+    Object.entries(activeSessions).forEach(([domain, session]) => {
+      if (session.tabId === tabId && domain !== newDomain) {
+        endTrackingSession(domain);
+      }
+    });
+
+    // Start tracking new domain if different
+    if (newDomain && !activeSessions[newDomain]) {
+      startTrackingSession(newDomain, tabId);
+    }
+  }
+});
+
+// Tab closed - end tracking
+chrome.tabs.onRemoved.addListener((tabId) => {
+  Object.entries(activeSessions).forEach(([domain, session]) => {
+    if (session.tabId === tabId) {
+      endTrackingSession(domain);
+    }
+  });
+});
+
+// Window focus changed - pause/resume tracking
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    // Browser lost focus - end all sessions
+    Object.keys(activeSessions).forEach(domain => {
+      endTrackingSession(domain);
+    });
+  } else {
+    // Browser gained focus - start tracking active tab
+    chrome.tabs.query({ active: true, windowId }, (tabs) => {
+      if (tabs[0] && tabs[0].url) {
+        const domain = extractDomain(tabs[0].url);
+        if (domain) {
+          startTrackingSession(domain, tabs[0].id);
+        }
+      }
+    });
+  }
+});

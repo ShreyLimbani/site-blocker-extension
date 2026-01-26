@@ -4,9 +4,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loadTheme();
   loadBlockedSites();
   loadSettings();
+  loadStats('today');
   setupEventListeners();
   setupTabNavigation();
   setupThemeListeners();
+  setupStatsListeners();
 });
 
 /**
@@ -271,4 +273,121 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// ============================================
+// STATS FUNCTIONS
+// ============================================
+
+/**
+ * Set up stats-related event listeners
+ */
+function setupStatsListeners() {
+  // Period selector buttons
+  const periodBtns = document.querySelectorAll('.period-btn');
+  periodBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      periodBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      loadStats(btn.dataset.period);
+    });
+  });
+
+  // Clear stats button
+  document.getElementById('clearStatsBtn').addEventListener('click', () => {
+    if (confirm('Are you sure you want to clear all statistics? This cannot be undone.')) {
+      clearStats();
+    }
+  });
+}
+
+/**
+ * Load stats from background script
+ */
+function loadStats(period) {
+  chrome.runtime.sendMessage(
+    { action: 'getStats', period },
+    (response) => {
+      if (response && response.stats) {
+        displayStats(response.stats);
+      }
+    }
+  );
+}
+
+/**
+ * Display stats in the UI
+ */
+function displayStats(stats) {
+  // Update summary cards
+  document.getElementById('totalTime').textContent = formatTime(stats.totalTimeMs);
+  document.getElementById('totalVisits').textContent = stats.totalVisits;
+  document.getElementById('workTime').textContent = formatTime(stats.workTimeMs);
+  document.getElementById('offTime').textContent = formatTime(stats.offTimeMs);
+
+  // Display top sites
+  const listContainer = document.getElementById('topSitesList');
+
+  if (!stats.sites || stats.sites.length === 0) {
+    listContainer.innerHTML = '<p class="empty-state">No data yet. Browse some websites to see stats.</p>';
+    return;
+  }
+
+  listContainer.innerHTML = '';
+
+  // Get max time for calculating progress bar widths
+  const maxTime = stats.sites[0]?.timeMs || 1;
+
+  stats.sites.slice(0, 5).forEach(site => {
+    const percentage = Math.round((site.timeMs / maxTime) * 100);
+    const item = document.createElement('div');
+    item.className = 'top-site-item';
+    item.innerHTML = `
+      <div class="top-site-header">
+        <span class="top-site-domain">${escapeHtml(site.domain)}</span>
+        <span class="top-site-time">${formatTime(site.timeMs)}</span>
+      </div>
+      <div class="top-site-bar">
+        <div class="top-site-bar-fill" style="width: ${percentage}%"></div>
+      </div>
+      <span class="top-site-visits">${site.visits} visit${site.visits !== 1 ? 's' : ''}</span>
+    `;
+    listContainer.appendChild(item);
+  });
+}
+
+/**
+ * Format milliseconds to human readable time
+ */
+function formatTime(ms) {
+  if (!ms || ms < 1000) return '0m';
+
+  const totalSeconds = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+}
+
+/**
+ * Clear all stats
+ */
+function clearStats() {
+  chrome.runtime.sendMessage(
+    { action: 'clearStats' },
+    (response) => {
+      if (response && response.success) {
+        // Reset the display
+        document.getElementById('totalTime').textContent = '0m';
+        document.getElementById('totalVisits').textContent = '0';
+        document.getElementById('workTime').textContent = '0m';
+        document.getElementById('offTime').textContent = '0m';
+        document.getElementById('topSitesList').innerHTML =
+          '<p class="empty-state">No data yet. Browse some websites to see stats.</p>';
+      }
+    }
+  );
 }

@@ -15,6 +15,7 @@
     
     <div class="tabs">
       <button class="tab-btn active" data-tab="blocked-sites">Blocked Sites</button>
+      <button class="tab-btn" data-tab="stats">Stats</button>
       <button class="tab-btn" data-tab="settings">Settings</button>
     </div>
     
@@ -41,6 +42,50 @@
       </div>
     </div>
     
+    <!-- Stats Tab -->
+    <div id="stats" class="tab-content">
+      <div class="section">
+        <div class="period-selector">
+          <button class="period-btn active" data-period="today">Today</button>
+          <button class="period-btn" data-period="week">This Week</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="stats-summary">
+          <div class="stats-card stats-card-main">
+            <span class="stats-value" id="totalTime">0m</span>
+            <span class="stats-label">Total Time</span>
+          </div>
+          <div class="stats-card-row">
+            <div class="stats-card stats-card-small">
+              <span class="stats-value stats-value-small" id="totalVisits">0</span>
+              <span class="stats-label">Visits</span>
+            </div>
+            <div class="stats-card stats-card-small">
+              <span class="stats-value stats-value-small stats-work" id="workTime">0m</span>
+              <span class="stats-label">Work Hours</span>
+            </div>
+            <div class="stats-card stats-card-small">
+              <span class="stats-value stats-value-small stats-off" id="offTime">0m</span>
+              <span class="stats-label">Off Hours</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Top Sites</h2>
+        <div id="topSitesList" class="top-sites-list">
+          <p class="empty-state">No data yet. Browse some websites to see stats.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <button id="clearStatsBtn" class="btn btn-secondary">Clear All Stats</button>
+      </div>
+    </div>
+
     <!-- Settings Tab -->
     <div id="settings" class="tab-content">
       <div class="section">
