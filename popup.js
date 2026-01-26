@@ -1,11 +1,80 @@
 // Popup Script - Manages UI and blocked sites list
 
 document.addEventListener('DOMContentLoaded', () => {
+  loadTheme();
   loadBlockedSites();
   loadSettings();
   setupEventListeners();
   setupTabNavigation();
+  setupThemeListeners();
 });
+
+/**
+ * Load theme from storage and apply it
+ */
+function loadTheme() {
+  chrome.storage.local.get(['theme'], (result) => {
+    const savedTheme = result.theme || 'auto';
+    applyTheme(savedTheme);
+
+    // Set the correct radio button
+    const themeRadio = document.querySelector(`input[name="theme"][value="${savedTheme}"]`);
+    if (themeRadio) {
+      themeRadio.checked = true;
+    }
+  });
+}
+
+/**
+ * Apply theme to the document
+ */
+function applyTheme(theme) {
+  let effectiveTheme = theme;
+
+  if (theme === 'auto') {
+    effectiveTheme = getSystemTheme();
+  }
+
+  document.documentElement.setAttribute('data-theme', effectiveTheme);
+}
+
+/**
+ * Get the system's preferred color scheme
+ */
+function getSystemTheme() {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+/**
+ * Save theme preference to storage
+ */
+function saveTheme(theme) {
+  chrome.storage.local.set({ theme }, () => {
+    applyTheme(theme);
+  });
+}
+
+/**
+ * Set up theme radio button listeners
+ */
+function setupThemeListeners() {
+  const themeRadios = document.querySelectorAll('input[name="theme"]');
+
+  themeRadios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      saveTheme(e.target.value);
+    });
+  });
+
+  // Listen for system theme changes when in auto mode
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    chrome.storage.local.get(['theme'], (result) => {
+      if (result.theme === 'auto' || !result.theme) {
+        applyTheme('auto');
+      }
+    });
+  });
+}
 
 /**
  * Set up tab navigation
