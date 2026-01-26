@@ -240,8 +240,7 @@ body {
 }
 
 .sites-list {
-  max-height: 300px;
-  overflow-y: auto;
+  /* Scrolling handled by .tab-content parent */
 }
 
 .site-item {
