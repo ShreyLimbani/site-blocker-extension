@@ -109,8 +109,9 @@ function setupEventListeners() {
       addNewSite();
     }
   });
-  
+
   document.getElementById('saveHoursBtn').addEventListener('click', saveWorkingHours);
+  document.getElementById('saveLimitBtn').addEventListener('click', saveCustomLimit);
 }
 
 /**
@@ -129,7 +130,7 @@ function loadSettings() {
       }
     }
   );
-  
+
   // Load daily limit
   chrome.runtime.sendMessage(
     { action: 'getDailyLimit' },
@@ -137,9 +138,29 @@ function loadSettings() {
       if (response) {
         document.getElementById('dailyUsed').textContent = `${response.dailyLimitUsed} min`;
         document.getElementById('dailyRemaining').textContent = `${response.dailyLimitRemaining} min`;
+        document.getElementById('dailyLimitInput').value = response.dailyLimitTotal;
       }
     }
   );
+}
+
+/**
+ * Show subtle toast notification
+ */
+function showToast(message, type = 'success') {
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+
+  // Trigger animation
+  setTimeout(() => toast.classList.add('toast-show'), 10);
+
+  // Remove after 3 seconds
+  setTimeout(() => {
+    toast.classList.remove('toast-show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
 
 /**
@@ -152,21 +173,42 @@ function saveWorkingHours() {
     endHour: parseInt(document.getElementById('endHour').value),
     endMinute: parseInt(document.getElementById('endMinute').value)
   };
-  
+
   chrome.runtime.sendMessage(
     { action: 'setWorkingHours', workingHours },
     (response) => {
       if (response.success) {
-        alert('Working hours saved successfully!');
+        showToast('✓ Working hours saved');
       } else {
-        alert('Failed to save working hours');
+        showToast('Failed to save working hours', 'error');
       }
     }
   );
 }
 
+/**
+ * Save custom daily limit
+ */
+function saveCustomLimit() {
+  const limit = parseInt(document.getElementById('dailyLimitInput').value);
 
+  if (isNaN(limit) || limit < 1 || limit > 480) {
+    showToast('Please enter a valid limit (1-480 minutes)', 'error');
+    return;
+  }
 
+  chrome.runtime.sendMessage(
+    { action: 'setCustomDailyLimit', limit },
+    (response) => {
+      if (response.success) {
+        showToast('✓ Daily limit saved');
+        loadSettings();
+      } else {
+        showToast('Failed to save daily limit', 'error');
+      }
+    }
+  );
+}
 
 /**
  * Load and display blocked sites
@@ -217,25 +259,26 @@ function displayBlockedSites(sites) {
 function addNewSite() {
   const input = document.getElementById('newSiteInput');
   const domain = input.value.trim().toLowerCase();
-  
+
   if (!domain) {
-    alert('Please enter a domain');
+    showToast('Please enter a domain', 'error');
     return;
   }
-  
+
   if (!isValidDomain(domain)) {
-    alert('Please enter a valid domain (e.g., facebook.com)');
+    showToast('Please enter a valid domain (e.g., facebook.com)', 'error');
     return;
   }
-  
+
   chrome.runtime.sendMessage(
     { action: 'addBlockedSite', domain },
     (response) => {
       if (response.success) {
         input.value = '';
         displayBlockedSites(response.blockedSites);
+        showToast(`✓ ${domain} blocked`);
       } else {
-        alert(response.message || 'Failed to add site');
+        showToast(response.message || 'Failed to add site', 'error');
       }
     }
   );
@@ -251,6 +294,7 @@ function removeSite(domain) {
       (response) => {
         if (response.success) {
           displayBlockedSites(response.blockedSites);
+          showToast(`✓ ${domain} removed`);
         }
       }
     );
@@ -387,6 +431,7 @@ function clearStats() {
         document.getElementById('offTime').textContent = '0m';
         document.getElementById('topSitesList').innerHTML =
           '<p class="empty-state">No data yet. Browse some websites to see stats.</p>';
+        showToast('✓ All stats cleared');
       }
     }
   );

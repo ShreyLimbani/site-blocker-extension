@@ -5,8 +5,9 @@ const DAILY_LIMIT_KEY = 'dailyLimitUsed';
 const DAILY_LIMIT_DATE_KEY = 'dailyLimitDate';
 const WORKING_HOURS_KEY = 'workingHours';
 const SITE_STATS_KEY = 'siteStats';
+const CUSTOM_DAILY_LIMIT_KEY = 'customDailyLimit';
 const DEFAULT_TIMER_DURATION = 5; // 5 minutes in minutes
-const DAILY_LIMIT_MINUTES = 60; // 60 minutes per day
+const DEFAULT_DAILY_LIMIT_MINUTES = 60; // Default: 60 minutes per day
 
 // In-memory session tracking
 let activeSessions = {}; // { domain: { tabId, startTime, isWorkingHours } }
@@ -28,6 +29,15 @@ function isWithinWorkingHours(workingHours) {
   const endTime = endHour * 60 + endMinute;
 
   return currentTime >= startTime && currentTime <= endTime;
+}
+
+/**
+ * Get custom daily limit or default
+ */
+function getDailyLimitMinutes(callback) {
+  chrome.storage.local.get([CUSTOM_DAILY_LIMIT_KEY], (result) => {
+    callback(result[CUSTOM_DAILY_LIMIT_KEY] || DEFAULT_DAILY_LIMIT_MINUTES);
+  });
 }
 
 // Initialize storage on install
@@ -97,6 +107,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'setCustomDailyLimit') {
+    handleSetCustomDailyLimit(request.limit, sendResponse);
+    return true;
+  }
+
   if (request.action === 'getStats') {
     handleGetStats(request.period, sendResponse);
     return true;
@@ -120,55 +135,57 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function handleCheckIfBlocked(url, sendResponse) {
   try {
     const domain = extractDomain(url);
-    
-    chrome.storage.local.get([BLOCKED_SITES_KEY, ACTIVE_TIMERS_KEY, DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY, WORKING_HOURS_KEY], (result) => {
-      const blockedSites = result[BLOCKED_SITES_KEY] || [];
-      const activeTimers = result[ACTIVE_TIMERS_KEY] || {};
-      const workingHours = result[WORKING_HOURS_KEY] || {};
-      
-      // Check if within working hours
-      const now = new Date();
-      const currentHour = now.getHours();
-      const currentMinute = now.getMinutes();
-      const startHour = workingHours.startHour || 9;
-      const startMinute = workingHours.startMinute || 0;
-      const endHour = workingHours.endHour || 17;
-      const endMinute = workingHours.endMinute || 0;
-      
-      const currentTime = currentHour * 60 + currentMinute;
-      const startTime = startHour * 60 + startMinute;
-      const endTime = endHour * 60 + endMinute;
-      const isWithinWorkingHours = currentTime >= startTime && currentTime <= endTime;
-      
-      // Check if domain is in blocked list
-      const isDomainBlocked = blockedSites.some(site => {
-        return domain.includes(site.replace('www.', ''));
+
+    getDailyLimitMinutes((dailyLimitMinutes) => {
+      chrome.storage.local.get([BLOCKED_SITES_KEY, ACTIVE_TIMERS_KEY, DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY, WORKING_HOURS_KEY], (result) => {
+        const blockedSites = result[BLOCKED_SITES_KEY] || [];
+        const activeTimers = result[ACTIVE_TIMERS_KEY] || {};
+        const workingHours = result[WORKING_HOURS_KEY] || {};
+
+        // Check if within working hours
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const startHour = workingHours.startHour || 9;
+        const startMinute = workingHours.startMinute || 0;
+        const endHour = workingHours.endHour || 17;
+        const endMinute = workingHours.endMinute || 0;
+
+        const currentTime = currentHour * 60 + currentMinute;
+        const startTime = startHour * 60 + startMinute;
+        const endTime = endHour * 60 + endMinute;
+        const isWithinWorkingHours = currentTime >= startTime && currentTime <= endTime;
+
+        // Check if domain is in blocked list
+        const isDomainBlocked = blockedSites.some(site => {
+          return domain.includes(site.replace('www.', ''));
+        });
+
+        // Only block if domain is blocked AND within working hours
+        if (isDomainBlocked && isWithinWorkingHours) {
+          const timerData = activeTimers[domain];
+          const isTimerActive = timerData && timerData.expiresAt > Date.now();
+
+          // Get daily limit info
+          const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
+          const dailyLimitRemaining = Math.max(0, dailyLimitMinutes - dailyLimitUsed);
+
+          sendResponse({
+            isBlocked: true,
+            hasActiveTimer: isTimerActive,
+            timeRemaining: isTimerActive ? Math.max(0, timerData.expiresAt - Date.now()) : 0,
+            dailyLimitUsed,
+            dailyLimitRemaining
+          });
+        } else {
+          // Outside working hours or not in blocked list - allow access
+          sendResponse({
+            isBlocked: false,
+            hasActiveTimer: false,
+            dailyLimitRemaining: dailyLimitMinutes
+          });
+        }
       });
-      
-      // Only block if domain is blocked AND within working hours
-      if (isDomainBlocked && isWithinWorkingHours) {
-        const timerData = activeTimers[domain];
-        const isTimerActive = timerData && timerData.expiresAt > Date.now();
-        
-        // Get daily limit info
-        const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
-        const dailyLimitRemaining = Math.max(0, DAILY_LIMIT_MINUTES - dailyLimitUsed);
-        
-        sendResponse({
-          isBlocked: true,
-          hasActiveTimer: isTimerActive,
-          timeRemaining: isTimerActive ? Math.max(0, timerData.expiresAt - Date.now()) : 0,
-          dailyLimitUsed,
-          dailyLimitRemaining
-        });
-      } else {
-        // Outside working hours or not in blocked list - allow access
-        sendResponse({
-          isBlocked: false,
-          hasActiveTimer: false,
-          dailyLimitRemaining: DAILY_LIMIT_MINUTES
-        });
-      }
     });
   } catch (error) {
     console.error('Error checking if blocked:', error);
@@ -180,65 +197,67 @@ function handleCheckIfBlocked(url, sendResponse) {
  * Start a timer for temporary access to a blocked site
  */
 function handleStartTimer(domain, durationMinutes = DEFAULT_TIMER_DURATION, sendResponse) {
-  chrome.storage.local.get([DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY, WORKING_HOURS_KEY], (result) => {
-    const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
-    const workingHours = result[WORKING_HOURS_KEY] || {};
-    
-    // Check if within working hours
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentMinute = now.getMinutes();
-    const startHour = workingHours.startHour || 9;
-    const startMinute = workingHours.startMinute || 0;
-    const endHour = workingHours.endHour || 17;
-    const endMinute = workingHours.endMinute || 0;
-    
-    const currentTime = currentHour * 60 + currentMinute;
-    const startTime = startHour * 60 + startMinute;
-    const endTime = endHour * 60 + endMinute;
-    const isWithinWorkingHours = currentTime >= startTime && currentTime <= endTime;
-    
-    // Check if daily limit would be exceeded
-    const wouldExceedLimit = dailyLimitUsed + durationMinutes > DAILY_LIMIT_MINUTES;
-    
-    if (wouldExceedLimit) {
-      sendResponse({
-        success: false,
-        error: `Daily limit exceeded. Used: ${dailyLimitUsed}min/${DAILY_LIMIT_MINUTES}min`,
-        dailyLimitUsed,
-        wouldExceedLimit: true
-      });
-      return;
-    }
-    
-    if (!isWithinWorkingHours) {
-      sendResponse({
-        success: false,
-        error: 'Override available only during working hours',
-        isOutsideWorkingHours: true
-      });
-      return;
-    }
-    
-    const expiresAt = Date.now() + (durationMinutes * 60 * 1000);
-    const today = new Date().toDateString();
-    
-    chrome.storage.local.get([ACTIVE_TIMERS_KEY], (timerResult) => {
-      const activeTimers = timerResult[ACTIVE_TIMERS_KEY] || {};
-      activeTimers[domain] = { expiresAt, durationMinutes };
-      
-      // Update daily limit
-      const newDailyLimitUsed = dailyLimitUsed + durationMinutes;
-      
-      chrome.storage.local.set({
-        [ACTIVE_TIMERS_KEY]: activeTimers,
-        [DAILY_LIMIT_KEY]: newDailyLimitUsed,
-        [DAILY_LIMIT_DATE_KEY]: today
-      }, () => {
+  getDailyLimitMinutes((dailyLimitMinutes) => {
+    chrome.storage.local.get([DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY, WORKING_HOURS_KEY], (result) => {
+      const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
+      const workingHours = result[WORKING_HOURS_KEY] || {};
+
+      // Check if within working hours
+      const now = new Date();
+      const currentHour = now.getHours();
+      const currentMinute = now.getMinutes();
+      const startHour = workingHours.startHour || 9;
+      const startMinute = workingHours.startMinute || 0;
+      const endHour = workingHours.endHour || 17;
+      const endMinute = workingHours.endMinute || 0;
+
+      const currentTime = currentHour * 60 + currentMinute;
+      const startTime = startHour * 60 + startMinute;
+      const endTime = endHour * 60 + endMinute;
+      const isWithinWorkingHours = currentTime >= startTime && currentTime <= endTime;
+
+      // Check if daily limit would be exceeded
+      const wouldExceedLimit = dailyLimitUsed + durationMinutes > dailyLimitMinutes;
+
+      if (wouldExceedLimit) {
         sendResponse({
-          success: true,
-          dailyLimitUsed: newDailyLimitUsed,
-          dailyLimitRemaining: DAILY_LIMIT_MINUTES - newDailyLimitUsed
+          success: false,
+          error: `Daily limit exceeded. Used: ${dailyLimitUsed}min/${dailyLimitMinutes}min`,
+          dailyLimitUsed,
+          wouldExceedLimit: true
+        });
+        return;
+      }
+
+      if (!isWithinWorkingHours) {
+        sendResponse({
+          success: false,
+          error: 'Override available only during working hours',
+          isOutsideWorkingHours: true
+        });
+        return;
+      }
+
+      const expiresAt = Date.now() + (durationMinutes * 60 * 1000);
+      const today = new Date().toDateString();
+
+      chrome.storage.local.get([ACTIVE_TIMERS_KEY], (timerResult) => {
+        const activeTimers = timerResult[ACTIVE_TIMERS_KEY] || {};
+        activeTimers[domain] = { expiresAt, durationMinutes };
+
+        // Update daily limit
+        const newDailyLimitUsed = dailyLimitUsed + durationMinutes;
+
+        chrome.storage.local.set({
+          [ACTIVE_TIMERS_KEY]: activeTimers,
+          [DAILY_LIMIT_KEY]: newDailyLimitUsed,
+          [DAILY_LIMIT_DATE_KEY]: today
+        }, () => {
+          sendResponse({
+            success: true,
+            dailyLimitUsed: newDailyLimitUsed,
+            dailyLimitRemaining: dailyLimitMinutes - newDailyLimitUsed
+          });
         });
       });
     });
@@ -347,17 +366,26 @@ function handleSetWorkingHours(workingHours, sendResponse) {
  * Get daily limit usage
  */
 function handleGetDailyLimit(sendResponse) {
-  chrome.storage.local.get([DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY], (result) => {
-    const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
-    sendResponse({
-      dailyLimitUsed,
-      dailyLimitRemaining: DAILY_LIMIT_MINUTES - dailyLimitUsed,
-      dailyLimitTotal: DAILY_LIMIT_MINUTES
+  getDailyLimitMinutes((dailyLimitMinutes) => {
+    chrome.storage.local.get([DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY], (result) => {
+      const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
+      sendResponse({
+        dailyLimitUsed,
+        dailyLimitRemaining: dailyLimitMinutes - dailyLimitUsed,
+        dailyLimitTotal: dailyLimitMinutes
+      });
     });
   });
 }
 
-
+/**
+ * Set custom daily limit
+ */
+function handleSetCustomDailyLimit(limit, sendResponse) {
+  chrome.storage.local.set({ [CUSTOM_DAILY_LIMIT_KEY]: limit }, () => {
+    sendResponse({ success: true, limit });
+  });
+}
 
 /**
  * Calculate daily limit usage (resets at midnight)
