@@ -5,10 +5,12 @@ document.addEventListener('DOMContentLoaded', () => {
   loadBlockedSites();
   loadSettings();
   loadStats('today');
+  loadFocusMode();
   setupEventListeners();
   setupTabNavigation();
   setupThemeListeners();
   setupStatsListeners();
+  setupFocusModeListeners();
 });
 
 /**
@@ -112,6 +114,26 @@ function setupEventListeners() {
 
   document.getElementById('saveHoursBtn').addEventListener('click', saveWorkingHours);
   document.getElementById('saveLimitBtn').addEventListener('click', saveCustomLimit);
+}
+
+/**
+ * Set up Focus Mode event listeners
+ */
+function setupFocusModeListeners() {
+  document.getElementById('focusModeToggle').addEventListener('change', toggleFocusMode);
+  document.getElementById('addWhitelistBtn').addEventListener('click', addWhitelistSite);
+  document.getElementById('whitelistInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      addWhitelistSite();
+    }
+  });
+
+  // Listen for storage changes to update UI
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && (changes.focusModeActive || changes.focusModeWhitelist)) {
+      loadFocusMode();
+    }
+  });
 }
 
 /**
@@ -435,4 +457,132 @@ function clearStats() {
       }
     }
   );
+}
+
+// ============================================
+// FOCUS MODE FUNCTIONS
+// ============================================
+
+/**
+ * Load Focus Mode status and whitelist
+ */
+function loadFocusMode() {
+  chrome.runtime.sendMessage(
+    { action: 'getFocusMode' },
+    (response) => {
+      if (response) {
+        const toggle = document.getElementById('focusModeToggle');
+        const status = document.getElementById('focusModeStatus');
+
+        toggle.checked = response.focusModeActive;
+
+        if (response.focusModeActive) {
+          status.textContent = 'Active';
+          status.className = 'status-badge status-active';
+        } else {
+          status.textContent = 'Inactive';
+          status.className = 'status-badge status-inactive';
+        }
+
+        displayWhitelistSites(response.whitelist);
+      }
+    }
+  );
+}
+
+/**
+ * Toggle Focus Mode on/off
+ */
+function toggleFocusMode() {
+  chrome.runtime.sendMessage(
+    { action: 'toggleFocusMode' },
+    (response) => {
+      if (response && response.success) {
+        const message = response.focusModeActive
+          ? '🎯 Focus Mode activated'
+          : 'Focus Mode deactivated';
+        showToast(message);
+        loadFocusMode();
+      }
+    }
+  );
+}
+
+/**
+ * Add a site to whitelist
+ */
+function addWhitelistSite() {
+  const input = document.getElementById('whitelistInput');
+  const domain = input.value.trim().toLowerCase();
+
+  if (!domain) {
+    showToast('Please enter a domain', 'error');
+    return;
+  }
+
+  if (!isValidDomain(domain)) {
+    showToast('Please enter a valid domain (e.g., gmail.com)', 'error');
+    return;
+  }
+
+  chrome.runtime.sendMessage(
+    { action: 'addToWhitelist', domain },
+    (response) => {
+      if (response.success) {
+        input.value = '';
+        displayWhitelistSites(response.whitelist);
+        showToast(`✓ ${domain} added to whitelist`);
+      } else {
+        showToast(response.message || 'Failed to add site', 'error');
+      }
+    }
+  );
+}
+
+/**
+ * Remove a site from whitelist
+ */
+function removeWhitelistSite(domain) {
+  if (confirm(`Remove ${domain} from whitelist?`)) {
+    chrome.runtime.sendMessage(
+      { action: 'removeFromWhitelist', domain },
+      (response) => {
+        if (response.success) {
+          displayWhitelistSites(response.whitelist);
+          showToast(`✓ ${domain} removed from whitelist`);
+        }
+      }
+    );
+  }
+}
+
+/**
+ * Display whitelist sites in the list
+ */
+function displayWhitelistSites(sites) {
+  const listContainer = document.getElementById('whitelistSitesList');
+
+  if (!sites || sites.length === 0) {
+    listContainer.innerHTML = '<p class="empty-state">No sites in whitelist. Add sites that you want to access during Focus Mode.</p>';
+    return;
+  }
+
+  listContainer.innerHTML = '';
+
+  sites.forEach(site => {
+    const item = document.createElement('div');
+    item.className = 'site-item';
+    item.innerHTML = `
+      <div class="site-info">
+        <span class="site-name">${escapeHtml(site)}</span>
+      </div>
+      <button class="btn btn-danger btn-small" data-site="${site}">Remove</button>
+    `;
+
+    item.querySelector('button').addEventListener('click', (e) => {
+      removeWhitelistSite(e.target.dataset.site);
+    });
+
+    listContainer.appendChild(item);
+  });
 }

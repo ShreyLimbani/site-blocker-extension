@@ -6,6 +6,8 @@ const DAILY_LIMIT_DATE_KEY = 'dailyLimitDate';
 const WORKING_HOURS_KEY = 'workingHours';
 const SITE_STATS_KEY = 'siteStats';
 const CUSTOM_DAILY_LIMIT_KEY = 'customDailyLimit';
+const FOCUS_MODE_ACTIVE_KEY = 'focusModeActive';
+const FOCUS_MODE_WHITELIST_KEY = 'focusModeWhitelist';
 const DEFAULT_TIMER_DURATION = 5; // 5 minutes in minutes
 const DEFAULT_DAILY_LIMIT_MINUTES = 60; // Default: 60 minutes per day
 
@@ -42,7 +44,7 @@ function getDailyLimitMinutes(callback) {
 
 // Initialize storage on install
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get([BLOCKED_SITES_KEY, WORKING_HOURS_KEY], (result) => {
+  chrome.storage.local.get([BLOCKED_SITES_KEY, WORKING_HOURS_KEY, FOCUS_MODE_ACTIVE_KEY, FOCUS_MODE_WHITELIST_KEY], (result) => {
     if (!result[BLOCKED_SITES_KEY]) {
       chrome.storage.local.set({
         [BLOCKED_SITES_KEY]: [
@@ -61,6 +63,12 @@ chrome.runtime.onInstalled.addListener(() => {
           endMinute: 0
         }
       });
+    }
+    if (result[FOCUS_MODE_ACTIVE_KEY] === undefined) {
+      chrome.storage.local.set({ [FOCUS_MODE_ACTIVE_KEY]: false });
+    }
+    if (!result[FOCUS_MODE_WHITELIST_KEY]) {
+      chrome.storage.local.set({ [FOCUS_MODE_WHITELIST_KEY]: [] });
     }
   });
 });
@@ -127,6 +135,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'getFocusMode') {
+    handleGetFocusMode(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'toggleFocusMode') {
+    handleToggleFocusMode(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'addToWhitelist') {
+    handleAddToWhitelist(request.domain, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'removeFromWhitelist') {
+    handleRemoveFromWhitelist(request.domain, sendResponse);
+    return true;
+  }
+
 });
 
 /**
@@ -137,10 +165,20 @@ function handleCheckIfBlocked(url, sendResponse) {
     const domain = extractDomain(url);
 
     getDailyLimitMinutes((dailyLimitMinutes) => {
-      chrome.storage.local.get([BLOCKED_SITES_KEY, ACTIVE_TIMERS_KEY, DAILY_LIMIT_KEY, DAILY_LIMIT_DATE_KEY, WORKING_HOURS_KEY], (result) => {
+      chrome.storage.local.get([
+        BLOCKED_SITES_KEY,
+        ACTIVE_TIMERS_KEY,
+        DAILY_LIMIT_KEY,
+        DAILY_LIMIT_DATE_KEY,
+        WORKING_HOURS_KEY,
+        FOCUS_MODE_ACTIVE_KEY,
+        FOCUS_MODE_WHITELIST_KEY
+      ], (result) => {
         const blockedSites = result[BLOCKED_SITES_KEY] || [];
         const activeTimers = result[ACTIVE_TIMERS_KEY] || {};
         const workingHours = result[WORKING_HOURS_KEY] || {};
+        const focusModeActive = result[FOCUS_MODE_ACTIVE_KEY] || false;
+        const whitelist = result[FOCUS_MODE_WHITELIST_KEY] || [];
 
         // Check if within working hours
         const now = new Date();
@@ -156,6 +194,52 @@ function handleCheckIfBlocked(url, sendResponse) {
         const endTime = endHour * 60 + endMinute;
         const isWithinWorkingHours = currentTime >= startTime && currentTime <= endTime;
 
+        // Check for active timer first (highest priority - if granted access, always allow)
+        const timerData = activeTimers[domain];
+        const isTimerActive = timerData && timerData.expiresAt > Date.now();
+
+        if (isTimerActive) {
+          // Timer is active - allow access regardless of mode
+          sendResponse({
+            isBlocked: false,
+            hasActiveTimer: true,
+            timeRemaining: Math.max(0, timerData.expiresAt - Date.now()),
+            dailyLimitRemaining: dailyLimitMinutes,
+            focusMode: focusModeActive
+          });
+          return;
+        }
+
+        // UNIVERSAL WHITELIST: Check if site is whitelisted (never block whitelisted sites)
+        const isWhitelisted = whitelist.some(site => {
+          return domain.includes(site.replace('www.', ''));
+        });
+
+        if (isWhitelisted) {
+          // Site is whitelisted - never block it
+          sendResponse({
+            isBlocked: false,
+            hasActiveTimer: false,
+            dailyLimitRemaining: dailyLimitMinutes,
+            focusMode: focusModeActive
+          });
+          return;
+        }
+
+        // Focus Mode logic: block all sites except whitelist
+        if (focusModeActive) {
+          // Site is NOT whitelisted and Focus Mode is active - block it
+          sendResponse({
+            isBlocked: true,
+            hasActiveTimer: false,
+            timeRemaining: 0,
+            dailyLimitUsed: 0,
+            dailyLimitRemaining: dailyLimitMinutes,
+            focusMode: true
+          });
+          return;
+        }
+
         // Check if domain is in blocked list
         const isDomainBlocked = blockedSites.some(site => {
           return domain.includes(site.replace('www.', ''));
@@ -163,26 +247,25 @@ function handleCheckIfBlocked(url, sendResponse) {
 
         // Only block if domain is blocked AND within working hours
         if (isDomainBlocked && isWithinWorkingHours) {
-          const timerData = activeTimers[domain];
-          const isTimerActive = timerData && timerData.expiresAt > Date.now();
-
           // Get daily limit info
           const dailyLimitUsed = getDailyLimitUsed(result[DAILY_LIMIT_KEY], result[DAILY_LIMIT_DATE_KEY]);
           const dailyLimitRemaining = Math.max(0, dailyLimitMinutes - dailyLimitUsed);
 
           sendResponse({
             isBlocked: true,
-            hasActiveTimer: isTimerActive,
-            timeRemaining: isTimerActive ? Math.max(0, timerData.expiresAt - Date.now()) : 0,
+            hasActiveTimer: false,
+            timeRemaining: 0,
             dailyLimitUsed,
-            dailyLimitRemaining
+            dailyLimitRemaining,
+            focusMode: false
           });
         } else {
           // Outside working hours or not in blocked list - allow access
           sendResponse({
             isBlocked: false,
             hasActiveTimer: false,
-            dailyLimitRemaining: dailyLimitMinutes
+            dailyLimitRemaining: dailyLimitMinutes,
+            focusMode: false
           });
         }
       });
@@ -644,3 +727,91 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
     });
   }
 });
+
+// ============================================
+// FOCUS MODE HANDLERS
+// ============================================
+
+/**
+ * Handle keyboard command to toggle Focus Mode
+ */
+chrome.commands.onCommand.addListener((command) => {
+  if (command === 'toggle-focus-mode') {
+    handleToggleFocusMode((response) => {
+      if (response.success) {
+        // Show notification
+        const message = response.focusModeActive
+          ? 'Focus Mode activated'
+          : 'Focus Mode deactivated';
+
+        chrome.notifications.create({
+          type: 'basic',
+          iconUrl: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="75" font-size="75">🎯</text></svg>',
+          title: 'Site Blocker',
+          message: message
+        });
+      }
+    });
+  }
+});
+
+/**
+ * Get Focus Mode status
+ */
+function handleGetFocusMode(sendResponse) {
+  chrome.storage.local.get([FOCUS_MODE_ACTIVE_KEY, FOCUS_MODE_WHITELIST_KEY], (result) => {
+    sendResponse({
+      focusModeActive: result[FOCUS_MODE_ACTIVE_KEY] || false,
+      whitelist: result[FOCUS_MODE_WHITELIST_KEY] || []
+    });
+  });
+}
+
+/**
+ * Toggle Focus Mode on/off
+ */
+function handleToggleFocusMode(sendResponse) {
+  chrome.storage.local.get([FOCUS_MODE_ACTIVE_KEY], (result) => {
+    const newState = !result[FOCUS_MODE_ACTIVE_KEY];
+    chrome.storage.local.set({ [FOCUS_MODE_ACTIVE_KEY]: newState }, () => {
+      sendResponse({
+        success: true,
+        focusModeActive: newState
+      });
+    });
+  });
+}
+
+/**
+ * Add domain to Focus Mode whitelist
+ */
+function handleAddToWhitelist(domain, sendResponse) {
+  chrome.storage.local.get([FOCUS_MODE_WHITELIST_KEY], (result) => {
+    const whitelist = result[FOCUS_MODE_WHITELIST_KEY] || [];
+    const cleanDomain = domain.replace('www.', '').toLowerCase();
+
+    if (!whitelist.includes(cleanDomain)) {
+      whitelist.push(cleanDomain);
+      chrome.storage.local.set({ [FOCUS_MODE_WHITELIST_KEY]: whitelist }, () => {
+        sendResponse({ success: true, whitelist });
+      });
+    } else {
+      sendResponse({ success: false, message: 'Domain already in whitelist' });
+    }
+  });
+}
+
+/**
+ * Remove domain from Focus Mode whitelist
+ */
+function handleRemoveFromWhitelist(domain, sendResponse) {
+  chrome.storage.local.get([FOCUS_MODE_WHITELIST_KEY], (result) => {
+    let whitelist = result[FOCUS_MODE_WHITELIST_KEY] || [];
+    const cleanDomain = domain.replace('www.', '').toLowerCase();
+    whitelist = whitelist.filter(site => site !== cleanDomain);
+
+    chrome.storage.local.set({ [FOCUS_MODE_WHITELIST_KEY]: whitelist }, () => {
+      sendResponse({ success: true, whitelist });
+    });
+  });
+}

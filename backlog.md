@@ -1,12 +1,35 @@
-## Feature options:
+# Site Blocker - Backlog
 
-- [x] *Productivity Stats* - Track blocked sites and time spent
-- [ ] *Password Protection* - Prevent easy override of blocks
-- [ ] *Focus Mode* - Block all sites except whitelist
-- [x] *Smart Scheduling* - Block sites only during work hours
-- [ ] *Whitelist* - Allow certain sites always
-- [ ] *Break Reminders* - Suggest breaks after focused work
-- [x] *Dark Mode* - Toggle for extension UI
-- [x] *Daily Limits* - Maximum override time per day
-- [ ] *Custom Messages* - Personalized blocking messages
-- [x] *History/Reports* - Track blocking patterns
+## Recent Updates
+
+### v1.2.0 (Latest)
+- ✓ **Focus Mode** - Block all websites except whitelisted ones with Alt+Shift+F shortcut toggle
+- ✓ **Universal Whitelist** - Sites are never blocked in any mode (Focus Mode or regular blocking)
+- ✓ **One-Click Whitelisting** - Add sites directly from blocking overlay with a button
+- ✓ **Smart Mode Transitions** - Seamless switching between Focus Mode and regular blocking
+- ✓ **Timer Priority System** - Active timers persist through Focus Mode toggles
+
+### v1.1.0
+- ✓ **Customizable Daily Limit** - Users can now set custom daily limits (1-480 minutes)
+- ✓ **Modernized Settings UI** - Card-based design with gradient backgrounds, icons, and hover effects
+- ✓ **Toast Notifications** - Replaced intrusive alert popups with subtle toast notifications
+- ✓ **Enhanced UX** - Hidden number spinners, improved focus states, better visual feedback
+
+## Implemented Features
+
+- [x] **Focus Mode** - Block all sites except whitelist with keyboard shortcut (Alt+Shift+F)
+- [x] **Universal Whitelist** - Whitelisted sites never blocked in any mode, managed via Focus Mode tab
+- [x] **Productivity Stats** - Track time spent on all websites with today/week views, top sites breakdown
+- [x] **Smart Scheduling** - Block sites only during configurable working hours (9 AM - 5 PM default)
+- [x] **Dark Mode** - Auto-detecting theme system (Light/Dark/Auto) with smooth transitions
+- [x] **Daily Limits** - Customizable daily override time limits with usage tracking and remaining time display
+- [x] **History/Reports** - Comprehensive stats tracking with work/off hours breakdown
+
+## Planned Features
+
+- [ ] **Password Protection** - Prevent easy override of blocks with password requirement
+- [ ] **Break Reminders** - Smart notifications to suggest breaks after focused work periods
+- [ ] **Custom Messages** - Personalized blocking messages with motivational quotes or custom text
+- [ ] **Export/Import Settings** - Backup and restore configuration across devices
+- [ ] **Site Categories** - Group blocked sites by category (Social Media, News, Entertainment, etc.)
+- [ ] **Advanced Scheduling** - Different schedules for different days of the week

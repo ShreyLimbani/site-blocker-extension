@@ -6,7 +6,8 @@
   "permissions": [
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -25,5 +26,14 @@
   "action": {
     "default_popup": "popup.html",
     "default_title": "Site Blocker"
+  },
+  "commands": {
+    "toggle-focus-mode": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Toggle Focus Mode on/off"
+    }
   }
 }

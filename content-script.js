@@ -8,10 +8,14 @@
   setupTamperingDetection();
   setupVisibilityTracking();
 
-  // Listen for theme changes from popup
+  // Listen for theme and Focus Mode changes from popup
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.theme) {
       updateOverlayTheme();
+    }
+    // When Focus Mode is toggled, immediately re-check blocking status
+    if (areaName === 'local' && changes.focusModeActive) {
+      checkAndBlockIfNeeded();
     }
   });
 
@@ -21,7 +25,7 @@
       if (!chrome.runtime || !chrome.runtime.sendMessage) {
         return;
       }
-      
+
       const currentUrl = window.location.href;
       chrome.runtime.sendMessage(
         { action: 'checkIfBlocked', url: currentUrl },
@@ -30,12 +34,15 @@
           if (chrome.runtime.lastError) {
             return;
           }
-          
-          if (response && response.isBlocked && !response.hasActiveTimer) {
-            showBlockingOverlay();
-          } else if (response && response.isBlocked && response.hasActiveTimer) {
+
+          if (response && response.hasActiveTimer) {
+            // Timer is active - show timer widget regardless of isBlocked
             showTimerOverlay(response.timeRemaining);
+          } else if (response && response.isBlocked) {
+            // Site is blocked without active timer - show blocking overlay
+            showBlockingOverlay(response.focusMode);
           } else {
+            // Site is not blocked - hide all overlays
             hideBlockingOverlay();
           }
         }
@@ -48,72 +55,136 @@
     }
   }
   
-  function showBlockingOverlay() {
-    let overlay = document.getElementById('site-blocker-overlay');
-    if (overlay) return;
+  function showBlockingOverlay(isFocusMode = false) {
+    try {
+      let overlay = document.getElementById('site-blocker-overlay');
 
-    // Create a container for shadow DOM
-    const container = document.createElement('div');
-    container.id = 'site-blocker-overlay';
+      // If overlay exists but mode changed, remove it and recreate
+      if (overlay) {
+        const existingIsFocusMode = overlay.getAttribute('data-focus-mode') === 'true';
+        if (existingIsFocusMode !== isFocusMode) {
+          hideBlockingOverlay();
+          overlay = null;
+        } else {
+          return; // Same mode, keep existing overlay
+        }
+      }
+
+      // Create a container for shadow DOM
+      const container = document.createElement('div');
+      container.id = 'site-blocker-overlay';
+      container.setAttribute('data-focus-mode', isFocusMode.toString());
 
     // Attach shadow DOM for style isolation
     const shadowRoot = container.attachShadow({ mode: 'open' });
 
+    // Customize message for Focus Mode
+    const icon = isFocusMode ? '🎯' : '⛔';
+    const title = isFocusMode ? 'Focus Mode Active' : 'Website Blocked';
+    const subtitle = isFocusMode
+      ? 'This website is not whitelisted. Add it to access anytime!'
+      : "You've blocked this website to help you stay focused.";
+
     // Create the overlay HTML
     const overlayHTML = document.createElement('div');
     overlayHTML.className = 'blocker-overlay-wrapper';
-    overlayHTML.innerHTML = `
-      <div class="blocker-card">
-        <div class="blocker-header">
-          <div class="blocker-icon">⛔</div>
-          <h1>Website Blocked</h1>
-          <p class="blocker-subtitle">You've blocked this website to help you stay focused.</p>
-        </div>
 
-        <div class="blocker-body">
-          <div class="timer-section">
-            <label class="section-label">Grant Access For:</label>
-            <div class="slider-container">
-              <input type="range" id="duration-slider" class="duration-slider" min="1" max="10" value="5">
-              <div class="slider-labels">
-                <span class="label-value">1 min</span>
-                <span class="label-value" id="slider-display">5 mins</span>
-                <span class="label-value">10 mins</span>
+    if (isFocusMode) {
+      // Focus Mode: No timer option, but allow whitelisting
+      overlayHTML.innerHTML = `
+        <div class="blocker-card">
+          <div class="blocker-header">
+            <div class="blocker-icon">${icon}</div>
+            <h1>${title}</h1>
+            <p class="blocker-subtitle">${subtitle}</p>
+          </div>
+
+          <div class="blocker-body">
+            <div class="focus-mode-message">
+              <p class="focus-message-text">This site is not whitelisted</p>
+              <p class="focus-message-description">Whitelisted sites are never blocked, even outside Focus Mode</p>
+              <button class="whitelist-button" id="add-to-whitelist-btn">
+                <span class="whitelist-icon">✅</span>
+                Add to Whitelist
+              </button>
+              <div class="separator">
+                <span class="separator-text">or</span>
               </div>
+              <p class="focus-message-hint">Press Alt+Shift+F to disable Focus Mode</p>
             </div>
           </div>
         </div>
+      `;
+    } else {
+      // Regular blocking: Show timer option
+      overlayHTML.innerHTML = `
+        <div class="blocker-card">
+          <div class="blocker-header">
+            <div class="blocker-icon">${icon}</div>
+            <h1>${title}</h1>
+            <p class="blocker-subtitle">${subtitle}</p>
+          </div>
 
-        <div class="blocker-footer">
-          <button class="grant-button" id="grant-access-btn">Grant Access</button>
-          <p class="disclaimer">Use this wisely. Stay focused! 💪</p>
+          <div class="blocker-body">
+            <div class="timer-section">
+              <label class="section-label">Grant Access For:</label>
+              <div class="slider-container">
+                <input type="range" id="duration-slider" class="duration-slider" min="1" max="10" value="5">
+                <div class="slider-labels">
+                  <span class="label-value">1 min</span>
+                  <span class="label-value" id="slider-display">5 mins</span>
+                  <span class="label-value">10 mins</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="blocker-footer">
+            <button class="grant-button" id="grant-access-btn">Grant Access</button>
+            <p class="disclaimer">Use this wisely. Stay focused! 💪</p>
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
 
     shadowRoot.appendChild(overlayHTML);
     injectBlockerStyles(shadowRoot);
     applyOverlayTheme(shadowRoot);
 
-    const slider = shadowRoot.getElementById('duration-slider');
-    const display = shadowRoot.getElementById('slider-display');
-    const grantBtn = shadowRoot.getElementById('grant-access-btn');
+    if (isFocusMode) {
+      // Add whitelist button handler
+      const whitelistBtn = shadowRoot.getElementById('add-to-whitelist-btn');
+      if (whitelistBtn) {
+        whitelistBtn.addEventListener('click', () => {
+          addCurrentSiteToWhitelist(shadowRoot);
+        });
+      }
+    } else {
+      const slider = shadowRoot.getElementById('duration-slider');
+      const display = shadowRoot.getElementById('slider-display');
+      const grantBtn = shadowRoot.getElementById('grant-access-btn');
 
-    // Update display value
-    const updateDisplay = () => {
-      const value = parseInt(slider.value);
-      display.textContent = value === 1 ? '1 min' : `${value} mins`;
-    };
+      // Update display value
+      const updateDisplay = () => {
+        const value = parseInt(slider.value);
+        display.textContent = value === 1 ? '1 min' : `${value} mins`;
+      };
 
-    slider.addEventListener('input', updateDisplay);
+      slider.addEventListener('input', updateDisplay);
 
-    grantBtn.addEventListener('click', () => {
-      const minutes = parseInt(slider.value);
-      requestTemporaryAccess(minutes, container);
-    });
+      grantBtn.addEventListener('click', () => {
+        const minutes = parseInt(slider.value);
+        requestTemporaryAccess(minutes, container);
+      });
+    }
 
-    document.documentElement.appendChild(container);
-    document.body.style.overflow = 'hidden';
+      document.documentElement.appendChild(container);
+      document.body.style.overflow = 'hidden';
+    } catch (error) {
+      console.error('Error showing blocking overlay:', error);
+      // Try to clean up in case of error
+      hideBlockingOverlay();
+    }
   }
 
   function applyOverlayTheme(shadowRoot) {
@@ -252,6 +323,49 @@
     }
   }
   
+  function addCurrentSiteToWhitelist(shadowRoot) {
+    try {
+      const domain = extractDomain(window.location.href);
+      const btn = shadowRoot.getElementById('add-to-whitelist-btn');
+
+      // Disable button and show loading state
+      if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="whitelist-icon">⏳</span>Adding...';
+      }
+
+      chrome.runtime.sendMessage(
+        { action: 'addToWhitelist', domain },
+        (response) => {
+          if (chrome.runtime.lastError) return;
+
+          if (response && response.success) {
+            // Show success message
+            if (btn) {
+              btn.innerHTML = '<span class="whitelist-icon">✅</span>Added! Unblocking...';
+              btn.classList.add('success');
+            }
+            // The overlay will disappear automatically within 1 second
+            // as checkAndBlockIfNeeded runs every second
+          } else {
+            // Show error
+            if (btn) {
+              btn.disabled = false;
+              btn.innerHTML = '<span class="whitelist-icon">❌</span>Already in whitelist';
+              btn.classList.add('error');
+              setTimeout(() => {
+                btn.innerHTML = '<span class="whitelist-icon">✅</span>Add to Whitelist';
+                btn.classList.remove('error');
+              }, 2000);
+            }
+          }
+        }
+      );
+    } catch (error) {
+      console.error('Error adding to whitelist:', error);
+    }
+  }
+
   function showErrorMessage(errorMsg, overlayContainer) {
     // Create error message overlay
     const errorDiv = document.createElement('div');
@@ -271,9 +385,9 @@
       text-align: center;
     `;
     errorDiv.textContent = errorMsg;
-    
+
     document.documentElement.appendChild(errorDiv);
-    
+
     // Remove error message after 3 seconds
     setTimeout(() => {
       errorDiv.remove();
@@ -642,6 +756,115 @@
       @keyframes pulse-warning {
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.08); }
+      }
+
+      /* Focus Mode Styles */
+      .focus-mode-message {
+        padding: 24px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+        border: 2px solid rgba(102, 126, 234, 0.3);
+        border-radius: 12px;
+        text-align: center;
+      }
+
+      .focus-message-text {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--card-text);
+        margin: 0 0 8px 0;
+        line-height: 1.5;
+      }
+
+      .focus-message-description {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0 0 20px 0;
+        line-height: 1.4;
+      }
+
+      .whitelist-button {
+        width: 100%;
+        padding: 14px 24px;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: 700;
+        font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 3px 5px rgba(16, 185, 129, 0.3);
+        outline: none;
+        letter-spacing: 0.5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+
+      .whitelist-button:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        box-shadow: 0 4px 8px rgba(16, 185, 129, 0.4);
+        transform: translateY(-1px);
+      }
+
+      .whitelist-button:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+      }
+
+      .whitelist-button:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .whitelist-button.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      }
+
+      .whitelist-button.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+      }
+
+      .whitelist-icon {
+        font-size: 18px;
+        line-height: 1;
+      }
+
+      .separator {
+        display: flex;
+        align-items: center;
+        margin: 20px 0;
+        color: var(--text-muted);
+      }
+
+      .separator::before,
+      .separator::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: var(--slider-track);
+      }
+
+      .separator-text {
+        padding: 0 12px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .focus-message-hint {
+        font-size: 13px;
+        color: var(--text-muted);
+        margin: 0;
+        font-family: 'Courier New', monospace;
+        background: rgba(66, 133, 244, 0.1);
+        padding: 8px 12px;
+        border-radius: 6px;
+        display: inline-block;
       }
     `;
 
