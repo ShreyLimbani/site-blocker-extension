@@ -2,7 +2,11 @@
 
 ## Recent Updates
 
-### v1.2.0 (Latest)
+### v1.3.0 (Latest)
+- ✓ **Export/Import Settings** - Backup and restore all settings across devices with JSON file
+- ✓ **Custom Messages** - Personalized blocking messages with motivational quotes or top Hacker News article integration
+
+### v1.2.0
 - ✓ **Focus Mode** - Block all websites except whitelisted ones with Alt+Shift+F shortcut toggle
 - ✓ **Universal Whitelist** - Sites are never blocked in any mode (Focus Mode or regular blocking)
 - ✓ **One-Click Whitelisting** - Add sites directly from blocking overlay with a button
@@ -15,7 +19,7 @@
 - ✓ **Toast Notifications** - Replaced intrusive alert popups with subtle toast notifications
 - ✓ **Enhanced UX** - Hidden number spinners, improved focus states, better visual feedback
 
-## Implemented Features
+## Complete Feature Set
 
 - [x] **Focus Mode** - Block all sites except whitelist with keyboard shortcut (Alt+Shift+F)
 - [x] **Universal Whitelist** - Whitelisted sites never blocked in any mode, managed via Focus Mode tab
@@ -24,12 +28,5 @@
 - [x] **Dark Mode** - Auto-detecting theme system (Light/Dark/Auto) with smooth transitions
 - [x] **Daily Limits** - Customizable daily override time limits with usage tracking and remaining time display
 - [x] **History/Reports** - Comprehensive stats tracking with work/off hours breakdown
-
-## Planned Features
-
-- [ ] **Password Protection** - Prevent easy override of blocks with password requirement
-- [ ] **Break Reminders** - Smart notifications to suggest breaks after focused work periods
 - [x] **Custom Messages** - Personalized blocking messages with motivational quotes or top Hacker News article
-- [ ] **Export/Import Settings** - Backup and restore configuration across devices
-- [ ] **Site Categories** - Group blocked sites by category (Social Media, News, Entertainment, etc.)
-- [ ] **Advanced Scheduling** - Different schedules for different days of the week
+- [x] **Export/Import Settings** - Backup and restore configuration across devices

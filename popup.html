@@ -221,6 +221,30 @@
       </div>
 
       <div class="section">
+        <h2>Export/Import Settings</h2>
+        <div class="export-import-card">
+          <div class="export-import-header">
+            <span class="export-import-icon">💾</span>
+            <div>
+              <span class="export-import-title">Backup & Restore</span>
+              <p class="export-import-hint">Save your settings or restore from a backup file</p>
+            </div>
+          </div>
+          <div class="export-import-buttons">
+            <button id="exportSettingsBtn" class="btn-export">
+              <span>📥</span>
+              Export Settings
+            </button>
+            <button id="importSettingsBtn" class="btn-import">
+              <span>📤</span>
+              Import Settings
+            </button>
+            <input type="file" id="importFileInput" accept=".json" style="display: none;">
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
         <h2>Appearance</h2>
         <div class="theme-selector">
           <label class="theme-option">

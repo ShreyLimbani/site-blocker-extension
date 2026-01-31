@@ -172,6 +172,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'exportSettings') {
+    handleExportSettings(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'importSettings') {
+    handleImportSettings(request.settings, sendResponse);
+    return true;
+  }
+
 });
 
 /**
@@ -907,4 +917,83 @@ async function fetchTopHNArticle() {
     title: story.title,
     url: story.url || `https://news.ycombinator.com/item?id=${story.id}`
   };
+}
+
+// ============================================
+// EXPORT/IMPORT SETTINGS HANDLERS
+// ============================================
+
+/**
+ * Export all settings to JSON
+ */
+function handleExportSettings(sendResponse) {
+  const keys = [
+    BLOCKED_SITES_KEY,
+    FOCUS_MODE_WHITELIST_KEY,
+    WORKING_HOURS_KEY,
+    CUSTOM_DAILY_LIMIT_KEY,
+    CUSTOM_BLOCK_MESSAGE_KEY,
+    'theme'
+  ];
+
+  chrome.storage.local.get(keys, (result) => {
+    const settings = {
+      version: '1.0',
+      exportDate: new Date().toISOString(),
+      blockedSites: result[BLOCKED_SITES_KEY] || [],
+      focusModeWhitelist: result[FOCUS_MODE_WHITELIST_KEY] || [],
+      workingHours: result[WORKING_HOURS_KEY] || {
+        startHour: 9,
+        startMinute: 0,
+        endHour: 17,
+        endMinute: 0
+      },
+      customDailyLimit: result[CUSTOM_DAILY_LIMIT_KEY] || DEFAULT_DAILY_LIMIT_MINUTES,
+      customBlockMessage: result[CUSTOM_BLOCK_MESSAGE_KEY] || '',
+      theme: result.theme || 'auto'
+    };
+
+    sendResponse({ success: true, settings });
+  });
+}
+
+/**
+ * Import settings from JSON
+ */
+function handleImportSettings(settings, sendResponse) {
+  try {
+    // Validate settings object
+    if (!settings || typeof settings !== 'object') {
+      sendResponse({ success: false, error: 'Invalid settings format' });
+      return;
+    }
+
+    // Prepare data to import (with defaults)
+    const dataToImport = {
+      [BLOCKED_SITES_KEY]: Array.isArray(settings.blockedSites) ? settings.blockedSites : [],
+      [FOCUS_MODE_WHITELIST_KEY]: Array.isArray(settings.focusModeWhitelist) ? settings.focusModeWhitelist : [],
+      [WORKING_HOURS_KEY]: settings.workingHours || {
+        startHour: 9,
+        startMinute: 0,
+        endHour: 17,
+        endMinute: 0
+      },
+      [CUSTOM_DAILY_LIMIT_KEY]: typeof settings.customDailyLimit === 'number'
+        ? settings.customDailyLimit
+        : DEFAULT_DAILY_LIMIT_MINUTES,
+      [CUSTOM_BLOCK_MESSAGE_KEY]: settings.customBlockMessage || '',
+      theme: settings.theme || 'auto'
+    };
+
+    // Save all settings
+    chrome.storage.local.set(dataToImport, () => {
+      if (chrome.runtime.lastError) {
+        sendResponse({ success: false, error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ success: true });
+      }
+    });
+  } catch (error) {
+    sendResponse({ success: false, error: error.message });
+  }
 }

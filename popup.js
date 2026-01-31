@@ -116,6 +116,13 @@ function setupEventListeners() {
   document.getElementById('saveHoursBtn').addEventListener('click', saveWorkingHours);
   document.getElementById('saveLimitBtn').addEventListener('click', saveCustomLimit);
   document.getElementById('saveMessageBtn').addEventListener('click', saveCustomMessage);
+
+  // Export/Import settings
+  document.getElementById('exportSettingsBtn').addEventListener('click', exportSettings);
+  document.getElementById('importSettingsBtn').addEventListener('click', () => {
+    document.getElementById('importFileInput').click();
+  });
+  document.getElementById('importFileInput').addEventListener('change', importSettings);
 }
 
 /**
@@ -622,4 +629,95 @@ function displayWhitelistSites(sites) {
 
     listContainer.appendChild(item);
   });
+}
+
+// ============================================
+// EXPORT/IMPORT SETTINGS FUNCTIONS
+// ============================================
+
+/**
+ * Export all settings to a JSON file
+ */
+function exportSettings() {
+  chrome.runtime.sendMessage(
+    { action: 'exportSettings' },
+    (response) => {
+      if (response && response.success) {
+        const settings = response.settings;
+        const dataStr = JSON.stringify(settings, null, 2);
+        const blob = new Blob([dataStr], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `site-blocker-settings-${timestamp}.json`;
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+
+        URL.revokeObjectURL(url);
+        showToast('✓ Settings exported successfully');
+      } else {
+        showToast('Failed to export settings', 'error');
+      }
+    }
+  );
+}
+
+/**
+ * Import settings from a JSON file
+ */
+function importSettings(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    try {
+      const settings = JSON.parse(e.target.result);
+
+      // Validate settings structure
+      if (!settings || typeof settings !== 'object') {
+        showToast('Invalid settings file format', 'error');
+        return;
+      }
+
+      // Confirm import
+      if (!confirm('This will overwrite your current settings. Continue?')) {
+        event.target.value = ''; // Reset file input
+        return;
+      }
+
+      // Send to background script to import
+      chrome.runtime.sendMessage(
+        { action: 'importSettings', settings },
+        (response) => {
+          if (response && response.success) {
+            showToast('✓ Settings imported successfully');
+            // Reload all UI sections
+            loadBlockedSites();
+            loadSettings();
+            loadFocusMode();
+            loadCustomMessage();
+            loadTheme();
+          } else {
+            showToast('Failed to import settings', 'error');
+          }
+          event.target.value = ''; // Reset file input
+        }
+      );
+    } catch (error) {
+      showToast('Invalid JSON file', 'error');
+      event.target.value = ''; // Reset file input
+    }
+  };
+
+  reader.onerror = () => {
+    showToast('Failed to read file', 'error');
+    event.target.value = ''; // Reset file input
+  };
+
+  reader.readAsText(file);
 }
