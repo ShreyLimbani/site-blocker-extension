@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   loadStats('today');
   loadFocusMode();
+  loadCustomMessage();
   setupEventListeners();
   setupTabNavigation();
   setupThemeListeners();
@@ -114,6 +115,7 @@ function setupEventListeners() {
 
   document.getElementById('saveHoursBtn').addEventListener('click', saveWorkingHours);
   document.getElementById('saveLimitBtn').addEventListener('click', saveCustomLimit);
+  document.getElementById('saveMessageBtn').addEventListener('click', saveCustomMessage);
 }
 
 /**
@@ -554,6 +556,41 @@ function removeWhitelistSite(domain) {
       }
     );
   }
+}
+
+// ============================================
+// CUSTOM MESSAGE FUNCTIONS
+// ============================================
+
+/**
+ * Load custom message from storage
+ */
+function loadCustomMessage() {
+  chrome.runtime.sendMessage(
+    { action: 'getCustomMessage' },
+    (response) => {
+      if (response) {
+        document.getElementById('customMessageInput').value = response.message || '';
+      }
+    }
+  );
+}
+
+/**
+ * Save custom message to storage
+ */
+function saveCustomMessage() {
+  const message = document.getElementById('customMessageInput').value.trim();
+  chrome.runtime.sendMessage(
+    { action: 'setCustomMessage', message },
+    (response) => {
+      if (response && response.success) {
+        showToast(message ? '✓ Custom message saved' : '✓ Using Hacker News top article');
+      } else {
+        showToast('Failed to save message', 'error');
+      }
+    }
+  );
 }
 
 /**

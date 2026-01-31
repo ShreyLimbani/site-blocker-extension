@@ -8,6 +8,8 @@ const SITE_STATS_KEY = 'siteStats';
 const CUSTOM_DAILY_LIMIT_KEY = 'customDailyLimit';
 const FOCUS_MODE_ACTIVE_KEY = 'focusModeActive';
 const FOCUS_MODE_WHITELIST_KEY = 'focusModeWhitelist';
+const CUSTOM_BLOCK_MESSAGE_KEY = 'customBlockMessage';
+const HN_CACHE_KEY = 'hnTopArticleCache';
 const DEFAULT_TIMER_DURATION = 5; // 5 minutes in minutes
 const DEFAULT_DAILY_LIMIT_MINUTES = 60; // Default: 60 minutes per day
 
@@ -152,6 +154,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.action === 'removeFromWhitelist') {
     handleRemoveFromWhitelist(request.domain, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getCustomMessage') {
+    handleGetCustomMessage(sendResponse);
+    return true;
+  }
+
+  if (request.action === 'setCustomMessage') {
+    handleSetCustomMessage(request.message, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getBlockMessage') {
+    handleGetBlockMessage(sendResponse);
     return true;
   }
 
@@ -814,4 +831,80 @@ function handleRemoveFromWhitelist(domain, sendResponse) {
       sendResponse({ success: true, whitelist });
     });
   });
+}
+
+// ============================================
+// CUSTOM BLOCK MESSAGE HANDLERS
+// ============================================
+
+/**
+ * Get custom block message setting
+ */
+function handleGetCustomMessage(sendResponse) {
+  chrome.storage.local.get([CUSTOM_BLOCK_MESSAGE_KEY], (result) => {
+    sendResponse({ message: result[CUSTOM_BLOCK_MESSAGE_KEY] || '' });
+  });
+}
+
+/**
+ * Set custom block message
+ */
+function handleSetCustomMessage(message, sendResponse) {
+  chrome.storage.local.set({ [CUSTOM_BLOCK_MESSAGE_KEY]: message }, () => {
+    sendResponse({ success: true });
+  });
+}
+
+/**
+ * Get the message to display on the block page.
+ * If custom message is set, return it. Otherwise fetch top HN article.
+ */
+function handleGetBlockMessage(sendResponse) {
+  chrome.storage.local.get([CUSTOM_BLOCK_MESSAGE_KEY, HN_CACHE_KEY], (result) => {
+    const customMessage = result[CUSTOM_BLOCK_MESSAGE_KEY] || '';
+
+    if (customMessage) {
+      sendResponse({ type: 'custom', text: customMessage });
+      return;
+    }
+
+    // Check cache (valid for 1 minute to allow variety while preventing API spam)
+    const cache = result[HN_CACHE_KEY];
+    if (cache && cache.timestamp && (Date.now() - cache.timestamp < 1 * 60 * 1000)) {
+      sendResponse({ type: 'hn', title: cache.title, url: cache.url });
+      return;
+    }
+
+    // Fetch top HN article
+    fetchTopHNArticle()
+      .then((article) => {
+        chrome.storage.local.set({
+          [HN_CACHE_KEY]: { title: article.title, url: article.url, timestamp: Date.now() }
+        });
+        sendResponse({ type: 'hn', title: article.title, url: article.url });
+      })
+      .catch(() => {
+        sendResponse({ type: 'hn', title: 'Check out Hacker News for something productive', url: 'https://news.ycombinator.com' });
+      });
+  });
+}
+
+/**
+ * Fetch a random article from top 10 trending stories on Hacker News
+ */
+async function fetchTopHNArticle() {
+  const topStoriesRes = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
+  const topStories = await topStoriesRes.json();
+
+  // Pick a random story from top 10
+  const randomIndex = Math.floor(Math.random() * Math.min(10, topStories.length));
+  const randomId = topStories[randomIndex];
+
+  const storyRes = await fetch(`https://hacker-news.firebaseio.com/v0/item/${randomId}.json`);
+  const story = await storyRes.json();
+
+  return {
+    title: story.title,
+    url: story.url || `https://news.ycombinator.com/item?id=${story.id}`
+  };
 }

@@ -29,7 +29,7 @@
 
 - [ ] **Password Protection** - Prevent easy override of blocks with password requirement
 - [ ] **Break Reminders** - Smart notifications to suggest breaks after focused work periods
-- [ ] **Custom Messages** - Personalized blocking messages with motivational quotes or custom text
+- [x] **Custom Messages** - Personalized blocking messages with motivational quotes or top Hacker News article
 - [ ] **Export/Import Settings** - Backup and restore configuration across devices
 - [ ] **Site Categories** - Group blocked sites by category (Social Media, News, Entertainment, etc.)
 - [ ] **Advanced Scheduling** - Different schedules for different days of the week

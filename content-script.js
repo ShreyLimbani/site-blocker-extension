@@ -100,6 +100,9 @@
           </div>
 
           <div class="blocker-body">
+            <div class="custom-message-area" id="custom-message-area">
+              <p class="custom-message-loading">Loading...</p>
+            </div>
             <div class="focus-mode-message">
               <p class="focus-message-text">This site is not whitelisted</p>
               <p class="focus-message-description">Whitelisted sites are never blocked, even outside Focus Mode</p>
@@ -126,6 +129,9 @@
           </div>
 
           <div class="blocker-body">
+            <div class="custom-message-area" id="custom-message-area">
+              <p class="custom-message-loading">Loading...</p>
+            </div>
             <div class="timer-section">
               <label class="section-label">Grant Access For:</label>
               <div class="slider-container">
@@ -179,12 +185,58 @@
     }
 
       document.documentElement.appendChild(container);
-      document.body.style.overflow = 'hidden';
+
+      // Set overflow hidden on body if it exists
+      if (document.body) {
+        document.body.style.overflow = 'hidden';
+      }
+
+      // Load and display custom message / HN article
+      loadBlockMessage(shadowRoot);
     } catch (error) {
       console.error('Error showing blocking overlay:', error);
       // Try to clean up in case of error
       hideBlockingOverlay();
     }
+  }
+
+  function loadBlockMessage(shadowRoot) {
+    try {
+      if (!chrome.runtime || !chrome.runtime.sendMessage) return;
+
+      chrome.runtime.sendMessage({ action: 'getBlockMessage' }, (response) => {
+        if (chrome.runtime.lastError) return;
+
+        const area = shadowRoot.getElementById('custom-message-area');
+        if (!area) return;
+
+        if (response && response.type === 'custom') {
+          area.innerHTML = `
+            <div class="custom-message-box">
+              <p class="custom-message-text">${escapeOverlayHtml(response.text)}</p>
+            </div>
+          `;
+        } else if (response && response.type === 'hn') {
+          area.innerHTML = `
+            <div class="hn-message-box">
+              <div class="hn-label">📰 Top on Hacker News</div>
+              <a class="hn-link" href="${escapeOverlayHtml(response.url)}" target="_blank" rel="noopener noreferrer">${escapeOverlayHtml(response.title)}</a>
+              <p class="hn-hint">Read something productive instead!</p>
+            </div>
+          `;
+        } else {
+          area.innerHTML = '';
+        }
+      });
+    } catch (error) {
+      // Silently ignore
+    }
+  }
+
+  function escapeOverlayHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   function applyOverlayTheme(shadowRoot) {
@@ -756,6 +808,75 @@
       @keyframes pulse-warning {
         0%, 100% { transform: scale(1); }
         50% { transform: scale(1.08); }
+      }
+
+      /* Custom Message Styles */
+      .custom-message-area {
+        margin-bottom: 20px;
+      }
+
+      .custom-message-loading {
+        font-size: 13px;
+        color: var(--text-muted);
+        text-align: center;
+        margin: 0;
+      }
+
+      .custom-message-box {
+        padding: 16px 20px;
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%);
+        border: 2px solid rgba(16, 185, 129, 0.3);
+        border-radius: 10px;
+        text-align: center;
+      }
+
+      .custom-message-text {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--card-text);
+        margin: 0;
+        line-height: 1.5;
+        white-space: pre-wrap;
+      }
+
+      .hn-message-box {
+        padding: 16px 20px;
+        background: linear-gradient(135deg, rgba(255, 102, 0, 0.08) 0%, rgba(255, 153, 0, 0.08) 100%);
+        border: 2px solid rgba(255, 102, 0, 0.3);
+        border-radius: 10px;
+        text-align: center;
+      }
+
+      .hn-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #ff6600;
+        margin-bottom: 8px;
+      }
+
+      .hn-link {
+        display: block;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--card-text);
+        text-decoration: none;
+        line-height: 1.4;
+        margin-bottom: 8px;
+        transition: color 0.2s ease;
+      }
+
+      .hn-link:hover {
+        color: #ff6600;
+        text-decoration: underline;
+      }
+
+      .hn-hint {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin: 0;
+        font-style: italic;
       }
 
       /* Focus Mode Styles */
